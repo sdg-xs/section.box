@@ -15,6 +15,7 @@ icon = "data/icon.svg"
 "omni.kit.usd_undo" = {}
 "omni.kit.viewport.utility" = {}
 "omni.kit.viewport.window" = {}
+"omni.kit.viewport.registry" = {}
 "omni.kit.widget.toolbar" = {}
 
 [[python.module]]

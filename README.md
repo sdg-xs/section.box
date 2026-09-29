@@ -27,7 +27,7 @@ The extension uses one box at a time. Cut surfaces remain open, without caps. Op
 Clone this repository into an extension search directory, using `section.box` as the folder name:
 
 ```powershell
-git clone https://github.com/sdgnemyno/usd-composer-section-box.git section.box
+git clone https://github.com/sdg-xs/usd-composer-section-box.git section.box
 ```
 
 Alternatively, download the repository through **Code > Download ZIP**, extract it, and rename the extracted repository folder to `section.box`.
@@ -116,6 +116,7 @@ Run these commands from the repository root in PowerShell 7:
 ```powershell
 ./run-verify.ps1
 ./run-verify-kit.ps1
+./run-verify-pointer.ps1
 ```
 
 Both scripts default to `C:\kit-app-template\_build\windows-x86_64\release\kit`. To use another Kit installation, pass the directory containing `kit.exe` with `-KitRoot`:
@@ -123,9 +124,10 @@ Both scripts default to `C:\kit-app-template\_build\windows-x86_64\release\kit`.
 ```powershell
 ./run-verify.ps1 -KitRoot 'C:\path\to\kit'
 ./run-verify-kit.ps1 -KitRoot 'C:\path\to\kit'
+./run-verify-pointer.ps1 -KitRoot 'C:\path\to\kit'
 ```
 
-The scripts expect an `extscache` directory beside the Kit directory. The geometry runner uses Kit's Python and USD libraries. The integration runner launches a separate headless Kit app with test scenes and checks rendered clipping, controls, drag gestures, undo, saved positions, and viewport isolation. Results and rendered images go to `verification/`.
+The scripts expect an `extscache` directory beside the Kit directory. The geometry runner uses Kit's Python and USD libraries. The integration runner launches a separate headless Kit app with test scenes and checks rendered clipping, controls, drag gestures, undo, saved positions, and viewport isolation. The pointer runner opens a Kit window and checks that arrow dragging resizes the box without starting drag selection, while ordinary drag selection still works. Results and rendered images go to `verification/`.
 
 From Windows Git Bash, `./run-verify.sh` forwards to the geometry runner and accepts the same `-KitRoot` argument. PowerShell 7 must be on your `PATH`.
 

@@ -12,16 +12,15 @@ import carb
 import omni.ext
 import omni.kit.app
 import omni.kit.viewport.utility as vp_util
-import omni.ui.scene as sc
+from omni.kit.viewport.registry import RegisterScene
 
 from .clipping import ClipPlaneController
 from .manipulator import SectionBoxManipulator
-from .manipulator_model import SectionBoxManipulatorModel
 from .saved_positions import SavedPositionStore
 from .state import SectionBoxState
 from .toolbar import ToolbarButton
+from .viewport_item import SectionBoxViewportItem
 from .window import SectionBoxWindow
-
 
 _runtime_state: SectionBoxState | None = None
 
@@ -41,12 +40,9 @@ class SectionBoxExtension(omni.ext.IExt):
         self._positions: Optional[SavedPositionStore] = None
         self._window: Optional[SectionBoxWindow] = None
         self._toolbar: Optional[ToolbarButton] = None
-        self._manipulator_model: Optional[SectionBoxManipulatorModel] = None
         self._manipulator: Optional[SectionBoxManipulator] = None
-        self._scene_view: Optional[sc.SceneView] = None
-        self._viewport_api = None
-        self._viewport_window = None
-        self._overlay_frame = None
+        self._scene_items: dict[int, SectionBoxViewportItem] = {}
+        self._scene_registration = None
         self._update_sub = None
 
     # --- lifecycle -----------------------------------------------------------
@@ -104,52 +100,31 @@ class SectionBoxExtension(omni.ext.IExt):
     # --- viewport manipulator setup ------------------------------------------
 
     def _setup_viewport_manipulator(self) -> None:
-        """Register the section-box manipulator into the active viewport."""
-        try:
-            viewport_window = vp_util.get_active_viewport_window(usd_context_name=None)
-            if viewport_window is None:
-                return
+        """Add the grips to Kit's viewport scene, alongside camera and selection."""
+        self._scene_registration = RegisterScene(self._create_viewport_item, "section.box.SectionBox")
+        self._update_active_manipulator()
 
-            self._viewport_window = viewport_window
+    def _create_viewport_item(self, viewport_args):
+        item = SectionBoxViewportItem(viewport_args, self._state, self._on_viewport_item_destroyed)
+        self._scene_items[item.viewport_api.id] = item
+        return item
 
-            self._manipulator_model = SectionBoxManipulatorModel(self._state)
+    def _on_viewport_item_destroyed(self, viewport_api):
+        self._scene_items.pop(viewport_api.id, None)
 
-            # Get or create a SceneView overlay on the viewport.
-            self._overlay_frame = viewport_window.get_frame("section_box_overlay")
-            with self._overlay_frame:
-                self._scene_view = sc.SceneView(aspect_ratio_policy=sc.AspectRatioPolicy.PRESERVE_ASPECT_FIT)
-                with self._scene_view.scene:
-                    self._manipulator = SectionBoxManipulator(model=self._manipulator_model)
-
-            # Keep the SceneView's projection in sync with the viewport camera.
-            self._viewport_api = viewport_window.viewport_api
-            self._viewport_api.add_scene_view(self._scene_view)
-
-        except Exception:  # noqa: BLE001
-            carb.log_warn("[section.box] Failed to set up viewport manipulator")
-            import traceback
-
-            traceback.print_exc()
+    def _update_active_manipulator(self):
+        viewport = vp_util.get_active_viewport_window(usd_context_name=None)
+        item = self._scene_items.get(viewport.viewport_api.id) if viewport else None
+        self._manipulator = item.manipulator if item else None
 
     def _teardown_viewport_manipulator(self) -> None:
-        if self._viewport_api and self._scene_view:
-            self._viewport_api.remove_scene_view(self._scene_view)
-        self._viewport_api = None
-        if self._manipulator:
-            self._manipulator.destroy()
-            self._manipulator = None
-        if self._manipulator_model:
-            self._manipulator_model.destroy()
-            self._manipulator_model = None
-        if self._scene_view:
-            self._scene_view.scene.clear()
-        self._scene_view = None
-        if self._overlay_frame:
-            self._overlay_frame.clear()
-        self._overlay_frame = None
-        self._viewport_window = None
+        if self._scene_registration:
+            self._scene_registration.destroy()
+            self._scene_registration = None
+        self._scene_items.clear()
+        self._manipulator = None
 
     def _on_update(self, event) -> None:
-        if vp_util.get_active_viewport_window(usd_context_name=None) != self._viewport_window:
-            self._teardown_viewport_manipulator()
-            self._setup_viewport_manipulator()
+        for item in self._scene_items.values():
+            item.manipulator.sync_selection_guard()
+        self._update_active_manipulator()

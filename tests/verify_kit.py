@@ -18,7 +18,7 @@ from PIL import Image
 from pxr import Gf, UsdGeom, UsdLux
 
 from section_box.extension import SectionBoxExtension, get_runtime_state
-from section_box.model import Face, SectionBox
+from section_box.model import AXIS_VECTORS, Face, SectionBox
 from section_box.selection import fit_box_to_paths
 
 APP = omni.kit.app.get_app()
@@ -218,9 +218,21 @@ async def verify():
         await frames(30)
         state = extension._state
         assert get_runtime_state() is state
-        assert extension._scene_view is not None
+        assert extension._scene_items
         assert extension._manipulator._root is not None
-        checks.append("startup builds supported Scene UI shapes and attaches the viewport")
+        selection_layer = vp_util.get_active_viewport_window()._find_viewport_layer("Selection", "manipulator")
+        selection_manipulator = selection_layer.layer._SelectionManipulatorItem__manipulator
+        assert extension._manipulator.scene_view is selection_manipulator.scene_view
+        camera_layer = vp_util.get_active_viewport_window()._find_viewport_layer("Camera", "manipulator")
+        assert extension._manipulator.scene_view is camera_layer.layer.manipulator.scene_view
+        selection_drag = next(
+            gesture
+            for gesture in selection_manipulator._GestureBindingManipulator__gestures
+            if type(gesture).__name__ == "SelectionDragGesture"
+        )
+        arrow_drag = extension._manipulator._face_gestures[Face.MAX_X][0]
+        assert selection_drag.manager.should_prevent(selection_drag, arrow_drag)
+        checks.append("startup places section grips alongside viewport camera and selection gestures")
 
         omni.usd.get_context().get_selection().set_selected_prim_paths(["/Cube"], False)
         extension._window._on_fit_to_selection()
@@ -300,6 +312,12 @@ async def verify():
             state.edit(box=SectionBox(faces=frozenset({face})).rotated(1, 23).translated(Gf.Vec3d(3, 7, -2)))
             assert {f for f, mesh in manipulator._faces.items() if mesh.visible} == {face}
             assert {f for f, handle in manipulator._handles.items() if handle.visible} == {face}
+            assert {f for f, (_, tip) in manipulator._arrows.items() if tip.visible} == {face}
+            shaft, tip = manipulator._arrows[face]
+            outward = state.box.transform.TransformDir(AXIS_VECTORS[face.axis] * face.sign)
+            plane_center = state.box.transform.Transform(AXIS_VECTORS[face.axis] * face.sign * 50)
+            assert Gf.IsClose(Gf.Vec3d(*shaft.start), plane_center, 1e-4)
+            assert Gf.Dot(Gf.Vec3d(*tip.positions[4]) - plane_center, outward) > 0
             outline = [line for line in manipulator._lines if line.visible]
             assert len(outline) == 4
             inverse = state.box.transform.GetInverse()
@@ -311,6 +329,7 @@ async def verify():
             assert not any(line.visible for line in manipulator._lines)
             assert not any(handle.visible for handle in manipulator._handles.values())
             assert not any(mesh.visible for mesh in manipulator._faces.values())
+            assert not any(tip.visible for _, tip in manipulator._arrows.values())
             assert manipulator._center.visible and manipulator._root.visible
             omni.kit.undo.undo()
             assert manipulator._faces[face].visible and manipulator._handles[face].visible
@@ -436,7 +455,7 @@ async def verify():
         extension = None
         assert get_runtime_state() is None
         assert not settings.get("/rtx/sectionPlane/enabled")
-        checks.append("shutdown removes the overlay, toolbar group, and clipping")
+        checks.append("shutdown removes section grips, toolbar group, and clipping")
         extension = SectionBoxExtension()
         extension.on_startup("section.box")
         await frames(10)
